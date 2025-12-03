@@ -12,8 +12,7 @@ from yambopy.units import kb,autime2s,ha2ev,m_e,speed_of_light
 import os
 
 
-
-def get_exciton_dipole(state,blongdir,ylat,ydip,yexc):
+def get_exciton_dipole(state, blongdir, ylat, ydip, yexc, _cache={}):
     """
     This function computes the dipole D of exciton state `state`
     at Q=0 starting from the transition-space expression:
@@ -37,27 +36,27 @@ def get_exciton_dipole(state,blongdir,ylat,ydip,yexc):
     Output:
     * Values of |D|^2 in bohr^2
     """
-    if not isinstance(blongdir,np.ndarray): blongdir = np.array(blongdir)
-    
 
-    # Dipoles are dimensioned as (k,c,v) not (k,v,c) so we switch the table
-    table_kcv = yexc.table.copy()
-    table_kcv[:,[1,2]] = yexc.table[:,[2,1]]
+    blongdir = np.asarray(blongdir, dtype=float)
+    key = (id(ydip.dipoles), id(yexc.table), tuple(blongdir))
 
-    # Field direction
-    field_dir = blongdir/np.linalg.norm(blongdir)
+    # cache dipoles_proj and kcv_idx for same inputs
+    if key not in _cache:
+        field_dir = blongdir / np.linalg.norm(blongdir)
+        dipoles_proj = np.einsum('x,kxcv->kcv', field_dir, ydip.dipoles)
 
-    # Dipole projection along field direction
-    dipoles = np.einsum('x,kxcv->kcv',field_dir,ydip.dipoles)
+        table_kcv = yexc.table[:, [0, 2, 1]]
+        kcv_idx = tuple((table_kcv[:, :3] - 1).T)
 
-    # Rotate to exciton basis (no-loop fast sum)
-    #dip_exc = np.sum(yexc.eigenvectors*dipoles[tuple(table_kcv[:,:3].T-1)],axis=1)
-    dip_exc = np.sum(yexc.eigenvectors[state]*dipoles[tuple(table_kcv[:,:3].T-1)])
-    dip_exc_squared = np.abs(dip_exc)**2.
-   
-    Nk = ylat.nkpoints   # BZ sum normalization
+        trans_dipoles = dipoles_proj[kcv_idx]
+        _cache[key] = trans_dipoles
+    else:
+        trans_dipoles = _cache[key]
 
-    return dip_exc_squared/Nk
+    dip_exc = np.dot(yexc.eigenvectors[state], trans_dipoles)
+    dip_exc_squared = np.abs(dip_exc)**2
+
+    return dip_exc_squared / ylat.nkpoints
 
 
 
